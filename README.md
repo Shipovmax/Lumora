@@ -155,3 +155,17 @@ curl -X POST http://localhost:8080/api/v1/auth/register \
 ```
 
 Access tokens are short-lived JWTs (`ACCESS_TOKEN_TTL`, default 15m). Refresh tokens are opaque, stored hashed, rotated on every `/refresh` call, and revocable via `/logout`.
+
+User profile (Этап 3):
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/v1/user/profile` | Bearer access token | Current user's profile (created empty on first access) |
+| PUT | `/api/v1/user/profile` | Bearer access token | Replace the profile (name, country, language, profession, interests, topics) |
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/user/profile \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Ada Lovelace","country":"UK","language":"en","profession":"Mathematician","interests":["computing"],"topics":["ai"]}'
+```

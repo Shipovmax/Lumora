@@ -8,10 +8,12 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	authhttp "github.com/Shipovmax/Lumora/internal/auth/transport/http"
+	userhttp "github.com/Shipovmax/Lumora/internal/user/transport/http"
 )
 
 type Deps struct {
 	Auth           *authhttp.Handler
+	User           *userhttp.Handler
 	AuthMiddleware func(http.Handler) http.Handler
 }
 
@@ -19,5 +21,6 @@ type Deps struct {
 func Mount(r chi.Router, deps Deps) {
 	r.Route("/api/v1", func(r chi.Router) {
 		authhttp.RegisterRoutes(r, deps.Auth, deps.AuthMiddleware)
+		userhttp.RegisterRoutes(r, deps.User, deps.AuthMiddleware)
 	})
 }

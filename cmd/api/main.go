@@ -18,6 +18,9 @@ import (
 	"github.com/Shipovmax/Lumora/internal/platform/logger"
 	"github.com/Shipovmax/Lumora/internal/platform/postgres"
 	"github.com/Shipovmax/Lumora/internal/platform/redis"
+	userrepo "github.com/Shipovmax/Lumora/internal/user/repository"
+	userservice "github.com/Shipovmax/Lumora/internal/user/service"
+	userhttp "github.com/Shipovmax/Lumora/internal/user/transport/http"
 )
 
 func main() {
@@ -58,9 +61,11 @@ func run() error {
 
 	tokenIssuer := jwtauth.NewIssuer(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL)
 	authSvc := authservice.New(authrepo.New(pgPool), tokenIssuer, cfg.Auth.RefreshTokenTTL)
+	userSvc := userservice.New(userrepo.New(pgPool))
 
 	apihttp.Mount(router, apihttp.Deps{
 		Auth:           authhttp.NewHandler(authSvc, log),
+		User:           userhttp.NewHandler(userSvc, log),
 		AuthMiddleware: tokenIssuer.Middleware,
 	})
 

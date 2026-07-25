@@ -169,3 +169,17 @@ curl -X PUT http://localhost:8080/api/v1/user/profile \
   -H "Content-Type: application/json" \
   -d '{"name":"Ada Lovelace","country":"UK","language":"en","profession":"Mathematician","interests":["computing"],"topics":["ai"]}'
 ```
+
+User context (Этап 4) — free-form text used by the AI when generating briefings, editable at any time:
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/v1/context` | Bearer access token | Current user's AI context (created empty on first access) |
+| PUT | `/api/v1/context` | Bearer access token | Replace the context content (max 4000 characters) |
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/context \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Interested in deep tech and AI research, skip celebrity news."}'
+```

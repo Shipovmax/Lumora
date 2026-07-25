@@ -100,15 +100,15 @@ internal/<domain>/
 | 1. Инициализация | `internal/platform/*`, `internal/config`, `cmd/api`, `cmd/worker`, `deployments/` | БД, Redis, конфиг, логи, graceful shutdown, health-check | ✅ |
 | 2. Авторизация | `internal/auth`, `internal/platform/jwtauth`, `internal/apihttp` | Регистрация, логин, JWT (access) + opaque refresh-токены с ротацией, logout, получение профиля (`/api/v1/auth/*`) | ✅ |
 | 3. Пользователь | `internal/user` | Профиль: имя, страна, язык, профессия, интересы, темы | ✅ |
-| 4. Контекст пользователя | `internal/usercontext` | Хранение/редактирование AI-контекста | — |
+| 4. Контекст пользователя | `internal/usercontext` | Хранение/редактирование AI-контекста | ✅ |
 | 5. Источники | `internal/source` | RSS/YouTube/Telegram, интерфейс `Fetcher` на тип источника | — |
 | 6. Импорт данных | `internal/ingest` | Получение публикаций, дедуп, подготовка текста (asynq: `ingest:fetch`) | — |
 | 7. Обработка событий | `internal/pipeline` | Очистка, дедуп, кластеризация, тема, важность (asynq: `pipeline:process`) | — |
 | 8. AI | `internal/ai` | Интерфейс `Provider`, 4 блока на событие с учётом контекста (asynq: `ai:generate`) | — |
 | 9. Генерация брифинга | `internal/briefing` | Утренний/вечерний брифинг из важных событий (asynq: `briefing:build`) | — |
 | 10. Push-уведомления | `internal/notification` | Интерфейс `Sender` (FCM/APNs), только действительно важные события (asynq: `notification:push`) | — |
-| 11. Frontend API | `internal/apihttp` + `transport/http` каждого домена | REST API, OpenAPI-документация в `docs/openapi.yaml` | частично (auth, user смонтированы, OpenAPI не оформлен) |
-| 12. Тестирование | `*_test.go` рядом с кодом в каждом домене | Unit (testify) + Integration (testcontainers-go) | частично (auth, user) |
+| 11. Frontend API | `internal/apihttp` + `transport/http` каждого домена | REST API, OpenAPI-документация в `docs/openapi.yaml` | частично (auth, user, usercontext смонтированы, OpenAPI не оформлен) |
+| 12. Тестирование | `*_test.go` рядом с кодом в каждом домене | Unit (testify) + Integration (testcontainers-go) | частично (auth, user, usercontext) |
 | 13. Документация | `README.md`, `ARCHITECTURE.md`, `docs/` | Обновляются после каждой завершённой задачи | текущее |
 
 ### Ключевые интерфейсы-порты (объявляются в `domain/`)
@@ -169,8 +169,10 @@ PostgreSQL — источник истины для всех сущностей.
 
 ## 7. Следующий шаг
 
-Этапы 1 (инициализация), 2 (авторизация) и 3 (профиль пользователя) реализованы по одинаковой слоистой структуре домена. Этап 2 провалидирован end-to-end через `docker compose` (register/login/refresh-ротация/logout/me).
+Этапы 1 (инициализация), 2 (авторизация), 3 (профиль пользователя) и 4 (контекст пользователя) реализованы по одинаковой слоистой структуре домена. Этап 2 провалидирован end-to-end через `docker compose` (register/login/refresh-ротация/logout/me).
 
 `internal/user` хранит профиль в таблице `user_profiles` (1:1 к `users`, `ON DELETE CASCADE`). `GET /api/v1/user/profile` создаёт пустой профиль при первом обращении (`GetOrCreateProfile`), `PUT` — полная замена (`UpsertProfile`); оба запроса — upsert через `ON CONFLICT (user_id) DO UPDATE`, чтобы не требовать отдельного шага создания профиля при регистрации и не связывать домены `auth`/`user` напрямую.
 
-Следующий шаг — Этап 4 (контекст пользователя: `internal/usercontext`, хранение и редактирование AI-контекста, используемого при генерации брифинга).
+`internal/usercontext` — тот же паттерн, но с одним полем `content` (свободный текст до 4000 символов) в таблице `user_context`: `GET /api/v1/context` возвращает/создаёт пустой контекст, `PUT /api/v1/context` заменяет его целиком. Этот контекст — вход для `ai.Provider` (Этап 8) при генерации объяснений событий; домены `ai`/`briefing` будут читать его через порт `usercontext`-репозитория, а не напрямую из БД.
+
+Следующий шаг — Этап 5 (источники информации: `internal/source`, RSS/YouTube/Telegram, интерфейс `Fetcher` на тип источника).

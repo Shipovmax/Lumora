@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	AssignPostToEvent(ctx context.Context, arg AssignPostToEventParams) error
 	CreateEvent(ctx context.Context, arg CreateEventParams) (Event, error)
+	GetEventByID(ctx context.Context, id pgtype.UUID) (Event, error)
 	GetPostsByID(ctx context.Context, dollar_1 []pgtype.UUID) ([]Post, error)
 	ListRecentEvents(ctx context.Context, lastSeenAt pgtype.Timestamptz) ([]Event, error)
 	RecomputeEventStats(ctx context.Context, arg RecomputeEventStatsParams) (Event, error)

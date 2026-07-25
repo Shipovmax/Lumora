@@ -104,17 +104,17 @@ internal/<domain>/
 | 5. Источники | `internal/source` | RSS/YouTube/Telegram, интерфейс `Fetcher` на тип источника | ✅ (CRUD + реализации `Fetcher` в `internal/source/fetcher`, добавлены Этапом 6) |
 | 6. Импорт данных | `internal/ingest` | Получение публикаций, дедуп, подготовка текста (asynq: `ingest:fetch`) | ✅ |
 | 7. Обработка событий | `internal/pipeline` | Очистка, дедуп, кластеризация, тема, важность (asynq: `pipeline:process`) | ✅ |
-| 8. AI | `internal/ai` | Интерфейс `Provider`, 4 блока на событие с учётом контекста (asynq: `ai:generate`) | — |
+| 8. AI | `internal/ai` | Интерфейс `Provider`, 4 блока на событие с учётом контекста (asynq: `ai:generate`) | ✅ (провайдер — Anthropic Claude) |
 | 9. Генерация брифинга | `internal/briefing` | Утренний/вечерний брифинг из важных событий (asynq: `briefing:build`) | — |
 | 10. Push-уведомления | `internal/notification` | Интерфейс `Sender` (FCM/APNs), только действительно важные события (asynq: `notification:push`) | — |
 | 11. Frontend API | `internal/apihttp` + `transport/http` каждого домена | REST API, OpenAPI-документация в `docs/openapi.yaml` | частично (auth, user, usercontext, source смонтированы, OpenAPI не оформлен) |
-| 12. Тестирование | `*_test.go` рядом с кодом в каждом домене | Unit (testify) + Integration (testcontainers-go) | частично (auth, user, usercontext, source, ingest, pipeline) |
+| 12. Тестирование | `*_test.go` рядом с кодом в каждом домене | Unit (testify) + Integration (testcontainers-go) | частично (auth, user, usercontext, source, ingest, pipeline, ai) |
 | 13. Документация | `README.md`, `ARCHITECTURE.md`, `docs/` | Обновляются после каждой завершённой задачи | текущее |
 
 ### Ключевые интерфейсы-порты (объявляются в `domain/`)
 
 - `source.Fetcher` — `Fetch(ctx, Source) ([]RawPost, error)`; реализации в `internal/source/fetcher`: `RSSFetcher` (`gofeed`, покрывает `rss` и `youtube`), `TelegramFetcher` (скрейпинг `t.me/s/<channel>`).
-- `ai.Provider` — `Explain(ctx, Event, UserContext) (EventExplanation, error)`; реализация подключается позже (Claude/OpenAI — решение отложено, интерфейс не завязан на конкретного вендора).
+- `ai.Provider` — `Explain(ctx, EventInput, userContext string) (ProviderResult, error)`; реализация — `internal/ai/provider.ClaudeProvider` (Anthropic Claude, `claude-opus-5`, согласовано с пользователем 2026-07-25); интерфейс не завязан на конкретного вендора.
 - `notification.Sender` — `Send(ctx, PushMessage) error`; реализации: FCM, APNs.
 - `auth.TokenIssuer` / `auth.Repository`, `user.Repository`, и т.д. — по одному репозиторий-порту на домен, реализация в `repository/`.
 
@@ -155,6 +155,7 @@ PostgreSQL — источник истины для всех сущностей.
 | Integration-тесты | `testcontainers-go` | Тесты репозиториев и очередей — против настоящих Postgres/Redis, без моков БД |
 | Парсинг RSS/Atom | `mmcdole/gofeed` | Один парсер закрывает и `rss`, и `youtube` — публичный Atom-фид канала YouTube (`youtube.com/feeds/videos.xml?channel_id=...`) имеет тот же формат |
 | Парсинг HTML (Telegram) | `PuerkitoBio/goquery` | Скрейпинг публичной `t.me/s/<channel>` (Этап 6) — jQuery-подобный API поверх `golang.org/x/net/html`, стандартный выбор для разбора HTML в Go |
+| AI-провайдер | `anthropics/anthropic-sdk-go`, модель `claude-opus-5` | Согласовано с пользователем 2026-07-25 (Этап 8). Структурированный вывод (`output_config.format` с JSON Schema) вместо assistant prefill — prefill не поддерживается на этой модели |
 
 ---
 
@@ -171,7 +172,7 @@ PostgreSQL — источник истины для всех сущностей.
 
 ## 7. Следующий шаг
 
-Этапы 1 (инициализация), 2 (авторизация), 3 (профиль пользователя), 4 (контекст пользователя), 5 (источники), 6 (импорт данных) и 7 (обработка событий) реализованы по одинаковой слоистой структуре домена. Этап 2 провалидирован end-to-end через `docker compose` (register/login/refresh-ротация/logout/me).
+Этапы 1 (инициализация), 2 (авторизация), 3 (профиль пользователя), 4 (контекст пользователя), 5 (источники), 6 (импорт данных), 7 (обработка событий) и 8 (AI) реализованы по одинаковой слоистой структуре домена. Этап 2 провалидирован end-to-end через `docker compose` (register/login/refresh-ротация/logout/me).
 
 `internal/user` хранит профиль в таблице `user_profiles` (1:1 к `users`, `ON DELETE CASCADE`). `GET /api/v1/user/profile` создаёт пустой профиль при первом обращении (`GetOrCreateProfile`), `PUT` — полная замена (`UpsertProfile`); оба запроса — upsert через `ON CONFLICT (user_id) DO UPDATE`, чтобы не требовать отдельного шага создания профиля при регистрации и не связывать домены `auth`/`user` напрямую.
 
@@ -193,4 +194,11 @@ PostgreSQL — источник истины для всех сущностей.
 - **Важность**: чисто эвристическая — `importance = LEAST(100, source_count * 20)`, где `source_count` — число различных `sources.id`, публикации которых присоединены к событию (пересчитывается в SQL через `COUNT(DISTINCT source_id)` при каждом присоединении, `internal/pipeline/repository/sqlc/queries/events.sql`). Смысл: чем больше независимых источников подтвердили одно и то же событие, тем оно важнее. Это отдельная метрика от AI-объяснения «почему это важно» (Этап 8) — используется брифингом (Этап 9) и уведомлениями (Этап 10) для отбора топ-событий.
 - Домен без HTTP: как `ingest`, только `transport/worker` — обработчик `queue.TypePipelineProcess` зарегистрирован в `cmd/worker/main.go`.
 
-Следующий шаг — Этап 8 (AI: `internal/ai`, интерфейс `Provider.Explain(ctx, Event, UserContext) (EventExplanation, error)`, генерация четырёх блоков объяснения на событие — что произошло/почему/что изменилось/что это значит для пользователя — с учётом `usercontext` из Этапа 4; конкретный вендор — Claude/OpenAI — решение отложено, интерфейс не завязан на конкретного провайдера; asynq-задача `ai:generate`, потребляет `events` из Этапа 7).
+`internal/ai` (Этап 8) — персонализированное AI-объяснение события:
+- **Ключевое архитектурное решение**: объяснение генерируется на пару **(event, user)**, не на одно событие глобально. Причина — четвёртый блок, «что это значит лично для пользователя», зависит от контекста конкретного пользователя (Этап 4), поэтому одно и то же событие для разных пользователей может получить разные объяснения. Таблица `event_explanations`: `UNIQUE(event_id, user_id)`, upsert при повторной генерации.
+- **Провайдер** (согласовано с пользователем 2026-07-25): Anthropic Claude, модель `claude-opus-5`, через `anthropics/anthropic-sdk-go`. Ключ — `ANTHROPIC_API_KEY`, читается SDK напрямую из окружения (не через `internal/config`, так как нужен только `cmd/worker`, а не `cmd/api`). Вывод — структурированный JSON (`output_config.format` с JSON Schema на 4 строковых поля) вместо assistant prefill: prefill не поддерживается на `claude-opus-5` (см. skill `claude-api`), а structured outputs — его официальная замена, с той же гарантией валидного формата без парсинга произвольного текста. `stop_reason: "refusal"` (safety-классификаторы) обрабатывается явно, а не падением при чтении `content`.
+- **`ai.Service.GenerateExplanation(ctx, eventID, userID)`** — читает событие через узкий `EventRepository` (заглушка над `pipeline.Repository.GetEventByID`, добавленным этим этапом) и контекст пользователя через узкий `UserContextRepository` (заглушка над `usercontext.Repository.GetContext`) — оба порта объявлены в `ai/service`, а не прямым импортом чужих `service`/`repository`, тот же паттерн, что и в `ingest`/`pipeline`. Передаёт `event.Title + event.MatchText` (тот же агрегированный текст, что использует кластеризация) и `userContext.Content` в `Provider.Explain`, сохраняет результат.
+- **Осознанная граница объёма**: `GenerateExplanation` не решает, **каким пользователям какие события интересны** — это подбирает Этап 9 (брифинг), который и будет ставить задачи `ai:generate` с конкретными парами `(event_id, user_id)`. Этап 8 — только механизм генерации для уже выбранной пары. Это не сужение по договорённости с пользователем (как было с Telegram/планировщиком), а логическая необходимость: до появления Этапа 9 нет источника данных о том, какие события релевантны какому пользователю.
+- Триггер — asynq-задача `queue.TypeAIGenerate` (`ai:generate`, payload `{"event_id": "...", "user_id": "..."}`), обработчик зарегистрирован в `cmd/worker/main.go`. Ничего пока не ставит эту задачу в очередь автоматически (по той же причине, что и выше) — до Этапа 9.
+
+Следующий шаг — Этап 9 (генерация брифинга: `internal/briefing`, отбор релевантных для пользователя событий по интересам/темам профиля и источникам, постановка `ai:generate` для выбранных пар, формирование утреннего/вечернего брифинга из объяснений с наибольшей важностью; asynq-задача `briefing:build`).

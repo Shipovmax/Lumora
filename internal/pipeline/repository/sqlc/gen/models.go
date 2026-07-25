@@ -21,6 +21,19 @@ type Event struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type EventExplanation struct {
+	ID                 pgtype.UUID        `json:"id"`
+	EventID            pgtype.UUID        `json:"event_id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	WhatHappened       string             `json:"what_happened"`
+	WhyItHappened      string             `json:"why_it_happened"`
+	WhatChanged        string             `json:"what_changed"`
+	WhatItMeansForUser string             `json:"what_it_means_for_user"`
+	Model              string             `json:"model"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Post struct {
 	ID          pgtype.UUID        `json:"id"`
 	SourceID    pgtype.UUID        `json:"source_id"`

@@ -215,3 +215,11 @@ Periodic auto-polling of enabled sources is intentionally deferred (see `ARCHITE
 ### Event processing (Этап 7)
 
 After a successful import, the worker automatically enqueues `pipeline:process` for the newly saved publications — `internal/pipeline` clusters them into events (near-duplicate/related publications from different sources become one event), assigns a topic (`ai`/`economy`/`crypto`/`world`/`other`) and an importance score based on how many independent sources cover the event. No ML/embeddings and no HTTP endpoint yet — see `ARCHITECTURE.md` §7 for the clustering approach and its known simplifications.
+
+### AI explanations (Этап 8)
+
+`internal/ai` generates a personalized four-block explanation (what happened / why / what changed / what it means for you) for an `(event, user)` pair, using Anthropic Claude (`claude-opus-5`) and that user's context (Этап 4). Requires `ANTHROPIC_API_KEY` in the environment (`cmd/worker` only). No HTTP endpoint, and nothing enqueues it automatically yet — deciding which events matter to which user is Этап 9's job. Trigger manually as an asynq task (`ai:generate`, `cmd/worker`):
+
+```json
+{"event_id": "<event uuid>", "user_id": "<user uuid>"}
+```

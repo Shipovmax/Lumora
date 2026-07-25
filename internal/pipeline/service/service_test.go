@@ -52,6 +52,14 @@ func (r *fakeRepository) ListRecentEvents(_ context.Context, since time.Time) ([
 	return out, nil
 }
 
+func (r *fakeRepository) GetEventByID(_ context.Context, id string) (domain.Event, error) {
+	e, ok := r.events[id]
+	if !ok {
+		return domain.Event{}, domain.ErrEventNotFound
+	}
+	return e, nil
+}
+
 func (r *fakeRepository) CreateEventWithPost(_ context.Context, topic domain.Topic, title, matchText, postID string, publishedAt time.Time) (domain.Event, error) {
 	e := domain.Event{
 		ID:          r.genID(),

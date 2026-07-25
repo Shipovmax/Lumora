@@ -12,6 +12,10 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	aiprovider "github.com/Shipovmax/Lumora/internal/ai/provider"
+	airepo "github.com/Shipovmax/Lumora/internal/ai/repository"
+	aiservice "github.com/Shipovmax/Lumora/internal/ai/service"
+	aiworker "github.com/Shipovmax/Lumora/internal/ai/transport/worker"
 	"github.com/Shipovmax/Lumora/internal/config"
 	ingestrepo "github.com/Shipovmax/Lumora/internal/ingest/repository"
 	ingestservice "github.com/Shipovmax/Lumora/internal/ingest/service"
@@ -25,6 +29,7 @@ import (
 	"github.com/Shipovmax/Lumora/internal/platform/redis"
 	"github.com/Shipovmax/Lumora/internal/source/fetcher"
 	sourcerepo "github.com/Shipovmax/Lumora/internal/source/repository"
+	usercontextrepo "github.com/Shipovmax/Lumora/internal/usercontext/repository"
 )
 
 func main() {
@@ -67,13 +72,19 @@ func run() error {
 	ingestSvc := ingestservice.New(ingestrepo.New(pgPool), sourceRepo, fetcher.NewRegistry())
 	ingestHandler := ingestworker.NewHandler(ingestSvc, asynqClient, log)
 
-	pipelineSvc := pipelineservice.New(pipelinerepo.New(pgPool))
+	pipelineRepo := pipelinerepo.New(pgPool)
+	pipelineSvc := pipelineservice.New(pipelineRepo)
 	pipelineHandler := pipelineworker.NewHandler(pipelineSvc, log)
+
+	userContextRepo := usercontextrepo.New(pgPool)
+	aiSvc := aiservice.New(airepo.New(pgPool), pipelineRepo, userContextRepo, aiprovider.NewClaudeProvider())
+	aiHandler := aiworker.NewHandler(aiSvc, log)
 
 	mux.HandleFunc(queue.TypeIngestFetch, ingestHandler.HandleFetch)
 	mux.HandleFunc(queue.TypePipelineProcess, pipelineHandler.HandleProcess)
+	mux.HandleFunc(queue.TypeAIGenerate, aiHandler.HandleGenerate)
 
-	// Этапы 8–10 добавят сюда обработчики ai:generate, briefing:build, notification:push.
+	// Этапы 9–10 добавят сюда обработчики briefing:build, notification:push.
 
 	if err := srv.Start(mux); err != nil {
 		return err

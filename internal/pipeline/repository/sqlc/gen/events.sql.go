@@ -62,6 +62,29 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 	return i, err
 }
 
+const getEventByID = `-- name: GetEventByID :one
+SELECT id, topic, title, match_text, importance, source_count, first_seen_at, last_seen_at, created_at, updated_at FROM events
+WHERE id = $1
+`
+
+func (q *Queries) GetEventByID(ctx context.Context, id pgtype.UUID) (Event, error) {
+	row := q.db.QueryRow(ctx, getEventByID, id)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.Topic,
+		&i.Title,
+		&i.MatchText,
+		&i.Importance,
+		&i.SourceCount,
+		&i.FirstSeenAt,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getPostsByID = `-- name: GetPostsByID :many
 SELECT id, source_id, external_id, title, url, content, published_at, created_at, event_id FROM posts
 WHERE id = ANY($1::uuid[])

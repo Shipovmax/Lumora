@@ -18,6 +18,7 @@ import (
 const (
 	TypeIngestFetch     = "ingest:fetch"
 	TypePipelineProcess = "pipeline:process"
+	TypeAIGenerate      = "ai:generate"
 )
 
 // IngestFetchPayload — payload задачи TypeIngestFetch.
@@ -28,6 +29,13 @@ type IngestFetchPayload struct {
 // PipelineProcessPayload — payload задачи TypePipelineProcess.
 type PipelineProcessPayload struct {
 	PostIDs []string `json:"post_ids"`
+}
+
+// AIGeneratePayload — payload задачи TypeAIGenerate. Кто ставит эту задачу
+// (какие события релевантны какому пользователю) — решает Этап 9 (брифинг).
+type AIGeneratePayload struct {
+	EventID string `json:"event_id"`
+	UserID  string `json:"user_id"`
 }
 
 // NewPipelineProcessTask строит задачу TypePipelineProcess для переданных ID

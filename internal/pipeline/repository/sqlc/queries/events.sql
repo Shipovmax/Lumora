@@ -7,6 +7,10 @@ SELECT * FROM events
 WHERE last_seen_at >= $1
 ORDER BY last_seen_at DESC;
 
+-- name: GetEventByID :one
+SELECT * FROM events
+WHERE id = $1;
+
 -- name: CreateEvent :one
 INSERT INTO events (topic, title, match_text, importance, source_count, first_seen_at, last_seen_at)
 VALUES ($1, $2, $3, 20, 1, $4, $4)

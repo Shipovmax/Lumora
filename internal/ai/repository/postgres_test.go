@@ -18,13 +18,12 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/Shipovmax/Lumora/internal/pipeline/domain"
-	"github.com/Shipovmax/Lumora/internal/pipeline/repository"
+	"github.com/Shipovmax/Lumora/internal/ai/domain"
+	"github.com/Shipovmax/Lumora/internal/ai/repository"
 )
 
 // Интеграционный тест поднимает настоящий Postgres в Docker, прогоняет goose-миграции
-// репозитория и проверяет Repository без моков БД, включая пересчёт source_count/importance
-// при присоединении публикаций из разных источников к одному событию.
+// репозитория и проверяет Repository без моков БД, включая upsert по (event_id, user_id).
 // Запуск: go test -tags=integration ./...
 func TestRepository(t *testing.T) {
 	ctx := context.Background()
@@ -74,65 +73,60 @@ func TestRepository(t *testing.T) {
 	var userID string
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id`,
-		"pipeline-owner@example.com", "hashed-password",
+		"ai-owner@example.com", "hashed-password",
 	).Scan(&userID))
 
-	var sourceAID, sourceBID string
+	var sourceID string
 	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO sources (user_id, type, name, url) VALUES ($1, 'rss', 'Feed A', 'https://a.example.com/rss') RETURNING id`,
+		`INSERT INTO sources (user_id, type, name, url) VALUES ($1, 'rss', 'Feed', 'https://example.com/rss') RETURNING id`,
 		userID,
-	).Scan(&sourceAID))
-	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO sources (user_id, type, name, url) VALUES ($1, 'rss', 'Feed B', 'https://b.example.com/rss') RETURNING id`,
-		userID,
-	).Scan(&sourceBID))
+	).Scan(&sourceID))
 
-	var postAID, postBID string
+	var eventID string
 	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO posts (source_id, external_id, title, content) VALUES ($1, 'a1', 'Post A', 'content a') RETURNING id`,
-		sourceAID,
-	).Scan(&postAID))
-	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO posts (source_id, external_id, title, content) VALUES ($1, 'b1', 'Post B', 'content b') RETURNING id`,
-		sourceBID,
-	).Scan(&postBID))
+		`INSERT INTO events (topic, title, match_text) VALUES ('ai', 'Some event', 'some event content') RETURNING id`,
+	).Scan(&eventID))
 
 	repo := repository.New(pool)
 
-	posts, err := repo.GetPosts(ctx, []string{postAID, postBID})
+	_, err = repo.GetExplanation(ctx, eventID, userID)
+	require.ErrorIs(t, err, domain.ErrExplanationNotFound)
+
+	saved, err := repo.SaveExplanation(ctx, domain.Explanation{
+		EventID:            eventID,
+		UserID:             userID,
+		WhatHappened:       "Something happened",
+		WhyItHappened:      "Because of reasons",
+		WhatChanged:        "Things changed",
+		WhatItMeansForUser: "It matters to you",
+		Model:              "claude-opus-5",
+	})
 	require.NoError(t, err)
-	require.Len(t, posts, 2)
+	require.NotEmpty(t, saved.ID)
 
-	now := time.Now()
-
-	event, err := repo.CreateEventWithPost(ctx, domain.TopicWorld, "Post A", "post a content", postAID, now)
+	fetched, err := repo.GetExplanation(ctx, eventID, userID)
 	require.NoError(t, err)
-	require.Equal(t, 1, event.SourceCount)
-	require.Equal(t, 20, event.Importance)
+	require.Equal(t, "Something happened", fetched.WhatHappened)
 
-	recent, err := repo.ListRecentEvents(ctx, now.Add(-time.Hour))
+	// Повторная генерация для той же пары (event, user) — upsert, не дубль.
+	updated, err := repo.SaveExplanation(ctx, domain.Explanation{
+		EventID:            eventID,
+		UserID:             userID,
+		WhatHappened:       "Updated explanation",
+		WhyItHappened:      "Because of reasons",
+		WhatChanged:        "Things changed",
+		WhatItMeansForUser: "It matters to you",
+		Model:              "claude-opus-5",
+	})
 	require.NoError(t, err)
-	require.Len(t, recent, 1)
-	require.Equal(t, event.ID, recent[0].ID)
-
-	updated, err := repo.AttachPost(ctx, event.ID, postBID, "post a content post b content", now.Add(time.Minute))
-	require.NoError(t, err)
-	require.Equal(t, 2, updated.SourceCount, "two distinct sources now contribute to the event")
-	require.Equal(t, 40, updated.Importance)
-	require.Equal(t, "post a content post b content", updated.MatchText)
-
-	fetched, err := repo.GetEventByID(ctx, event.ID)
-	require.NoError(t, err)
-	require.Equal(t, updated.MatchText, fetched.MatchText)
-
-	_, err = repo.GetEventByID(ctx, "00000000-0000-0000-0000-000000000000")
-	require.ErrorIs(t, err, domain.ErrEventNotFound)
+	require.Equal(t, saved.ID, updated.ID)
+	require.Equal(t, "Updated explanation", updated.WhatHappened)
 }
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	require.True(t, ok)
-	// internal/pipeline/repository/postgres_test.go -> repo root
+	// internal/ai/repository/postgres_test.go -> repo root
 	return filepath.Join(filepath.Dir(file), "..", "..", "..")
 }

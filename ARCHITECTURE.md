@@ -101,14 +101,14 @@ internal/<domain>/
 | 2. Авторизация | `internal/auth`, `internal/platform/jwtauth`, `internal/apihttp` | Регистрация, логин, JWT (access) + opaque refresh-токены с ротацией, logout, получение профиля (`/api/v1/auth/*`) | ✅ |
 | 3. Пользователь | `internal/user` | Профиль: имя, страна, язык, профессия, интересы, темы | ✅ |
 | 4. Контекст пользователя | `internal/usercontext` | Хранение/редактирование AI-контекста | ✅ |
-| 5. Источники | `internal/source` | RSS/YouTube/Telegram, интерфейс `Fetcher` на тип источника | — |
+| 5. Источники | `internal/source` | RSS/YouTube/Telegram, интерфейс `Fetcher` на тип источника | ✅ (CRUD; реализации `Fetcher` — Этап 6) |
 | 6. Импорт данных | `internal/ingest` | Получение публикаций, дедуп, подготовка текста (asynq: `ingest:fetch`) | — |
 | 7. Обработка событий | `internal/pipeline` | Очистка, дедуп, кластеризация, тема, важность (asynq: `pipeline:process`) | — |
 | 8. AI | `internal/ai` | Интерфейс `Provider`, 4 блока на событие с учётом контекста (asynq: `ai:generate`) | — |
 | 9. Генерация брифинга | `internal/briefing` | Утренний/вечерний брифинг из важных событий (asynq: `briefing:build`) | — |
 | 10. Push-уведомления | `internal/notification` | Интерфейс `Sender` (FCM/APNs), только действительно важные события (asynq: `notification:push`) | — |
-| 11. Frontend API | `internal/apihttp` + `transport/http` каждого домена | REST API, OpenAPI-документация в `docs/openapi.yaml` | частично (auth, user, usercontext смонтированы, OpenAPI не оформлен) |
-| 12. Тестирование | `*_test.go` рядом с кодом в каждом домене | Unit (testify) + Integration (testcontainers-go) | частично (auth, user, usercontext) |
+| 11. Frontend API | `internal/apihttp` + `transport/http` каждого домена | REST API, OpenAPI-документация в `docs/openapi.yaml` | частично (auth, user, usercontext, source смонтированы, OpenAPI не оформлен) |
+| 12. Тестирование | `*_test.go` рядом с кодом в каждом домене | Unit (testify) + Integration (testcontainers-go) | частично (auth, user, usercontext, source) |
 | 13. Документация | `README.md`, `ARCHITECTURE.md`, `docs/` | Обновляются после каждой завершённой задачи | текущее |
 
 ### Ключевые интерфейсы-порты (объявляются в `domain/`)
@@ -169,10 +169,12 @@ PostgreSQL — источник истины для всех сущностей.
 
 ## 7. Следующий шаг
 
-Этапы 1 (инициализация), 2 (авторизация), 3 (профиль пользователя) и 4 (контекст пользователя) реализованы по одинаковой слоистой структуре домена. Этап 2 провалидирован end-to-end через `docker compose` (register/login/refresh-ротация/logout/me).
+Этапы 1 (инициализация), 2 (авторизация), 3 (профиль пользователя), 4 (контекст пользователя) и 5 (источники, CRUD) реализованы по одинаковой слоистой структуре домена. Этап 2 провалидирован end-to-end через `docker compose` (register/login/refresh-ротация/logout/me).
 
 `internal/user` хранит профиль в таблице `user_profiles` (1:1 к `users`, `ON DELETE CASCADE`). `GET /api/v1/user/profile` создаёт пустой профиль при первом обращении (`GetOrCreateProfile`), `PUT` — полная замена (`UpsertProfile`); оба запроса — upsert через `ON CONFLICT (user_id) DO UPDATE`, чтобы не требовать отдельного шага создания профиля при регистрации и не связывать домены `auth`/`user` напрямую.
 
 `internal/usercontext` — тот же паттерн, но с одним полем `content` (свободный текст до 4000 символов) в таблице `user_context`: `GET /api/v1/context` возвращает/создаёт пустой контекст, `PUT /api/v1/context` заменяет его целиком. Этот контекст — вход для `ai.Provider` (Этап 8) при генерации объяснений событий; домены `ai`/`briefing` будут читать его через порт `usercontext`-репозитория, а не напрямую из БД.
 
-Следующий шаг — Этап 5 (источники информации: `internal/source`, RSS/YouTube/Telegram, интерфейс `Fetcher` на тип источника).
+`internal/source` — управление источниками пользователя (таблица `sources`: `user_id`, `type` с `CHECK (type IN ('rss','youtube','telegram'))`, `name`, `url`, `enabled`). CRUD: `POST/GET/PATCH/DELETE /api/v1/sources`. **Осознанное сужение объёма Этапа 5** (согласовано с пользователем 2026-07-25): реализован только CRUD источников; порт `domain.Fetcher` (`Fetch(ctx, Source) ([]RawPost, error)`) объявлен в `internal/source/domain`, но конкретные реализации (RSS-парсинг, YouTube через RSS-фид канала, Telegram) **не написаны — это задача Этапа 6** (`internal/ingest`), где и появится причина их писать (получение публикаций, дедуп, подготовка текста). Подход к Telegram-источнику (официальный Bot API с токеном, требующий добавления бота админом в канал, vs. скрейпинг публичной `t.me/s/<channel>` без токена, но вне ToS) ещё не выбран — решить в начале Этапа 6.
+
+Следующий шаг — Этап 6 (импорт данных: `internal/ingest`, реализации `Fetcher` для RSS/YouTube/Telegram, получение публикаций, дедупликация, подготовка текста; asynq-задача `ingest:fetch`).

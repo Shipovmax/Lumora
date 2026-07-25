@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	authhttp "github.com/Shipovmax/Lumora/internal/auth/transport/http"
+	sourcehttp "github.com/Shipovmax/Lumora/internal/source/transport/http"
 	userhttp "github.com/Shipovmax/Lumora/internal/user/transport/http"
 	usercontexthttp "github.com/Shipovmax/Lumora/internal/usercontext/transport/http"
 )
@@ -16,6 +17,7 @@ type Deps struct {
 	Auth           *authhttp.Handler
 	User           *userhttp.Handler
 	UserContext    *usercontexthttp.Handler
+	Source         *sourcehttp.Handler
 	AuthMiddleware func(http.Handler) http.Handler
 }
 
@@ -25,5 +27,6 @@ func Mount(r chi.Router, deps Deps) {
 		authhttp.RegisterRoutes(r, deps.Auth, deps.AuthMiddleware)
 		userhttp.RegisterRoutes(r, deps.User, deps.AuthMiddleware)
 		usercontexthttp.RegisterRoutes(r, deps.UserContext, deps.AuthMiddleware)
+		sourcehttp.RegisterRoutes(r, deps.Source, deps.AuthMiddleware)
 	})
 }

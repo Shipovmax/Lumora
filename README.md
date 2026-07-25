@@ -183,3 +183,19 @@ curl -X PUT http://localhost:8080/api/v1/context \
   -H "Content-Type: application/json" \
   -d '{"content":"Interested in deep tech and AI research, skip celebrity news."}'
 ```
+
+Sources (Этап 5) — RSS/YouTube/Telegram sources a user subscribes to. Fetching/importing publications is Этап 6 (`internal/ingest`, not implemented yet); for now sources are just registered and enabled/disabled:
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/v1/sources` | Bearer access token | Add a source (`type`: `rss`\|`youtube`\|`telegram`, `name`, `url`) |
+| GET | `/api/v1/sources` | Bearer access token | List the current user's sources |
+| PATCH | `/api/v1/sources/{id}` | Bearer access token | Enable/disable a source (`{"enabled": true\|false}`) |
+| DELETE | `/api/v1/sources/{id}` | Bearer access token | Remove a source |
+
+```bash
+curl -X POST http://localhost:8080/api/v1/sources \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"rss","name":"Hacker News","url":"https://news.ycombinator.com/rss"}'
+```

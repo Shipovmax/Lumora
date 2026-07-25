@@ -18,6 +18,9 @@ import (
 	"github.com/Shipovmax/Lumora/internal/platform/logger"
 	"github.com/Shipovmax/Lumora/internal/platform/postgres"
 	"github.com/Shipovmax/Lumora/internal/platform/redis"
+	sourcerepo "github.com/Shipovmax/Lumora/internal/source/repository"
+	sourceservice "github.com/Shipovmax/Lumora/internal/source/service"
+	sourcehttp "github.com/Shipovmax/Lumora/internal/source/transport/http"
 	userrepo "github.com/Shipovmax/Lumora/internal/user/repository"
 	userservice "github.com/Shipovmax/Lumora/internal/user/service"
 	userhttp "github.com/Shipovmax/Lumora/internal/user/transport/http"
@@ -66,11 +69,13 @@ func run() error {
 	authSvc := authservice.New(authrepo.New(pgPool), tokenIssuer, cfg.Auth.RefreshTokenTTL)
 	userSvc := userservice.New(userrepo.New(pgPool))
 	userContextSvc := usercontextservice.New(usercontextrepo.New(pgPool))
+	sourceSvc := sourceservice.New(sourcerepo.New(pgPool))
 
 	apihttp.Mount(router, apihttp.Deps{
 		Auth:           authhttp.NewHandler(authSvc, log),
 		User:           userhttp.NewHandler(userSvc, log),
 		UserContext:    usercontexthttp.NewHandler(userContextSvc, log),
+		Source:         sourcehttp.NewHandler(sourceSvc, log),
 		AuthMiddleware: tokenIssuer.Middleware,
 	})
 

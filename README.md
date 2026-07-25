@@ -218,8 +218,10 @@ After a successful import, the worker automatically enqueues `pipeline:process` 
 
 ### AI explanations (Этап 8)
 
-`internal/ai` generates a personalized four-block explanation (what happened / why / what changed / what it means for you) for an `(event, user)` pair, using Anthropic Claude (`claude-opus-5`) and that user's context (Этап 4). Requires `ANTHROPIC_API_KEY` in the environment (`cmd/worker` only). No HTTP endpoint, and nothing enqueues it automatically yet — deciding which events matter to which user is Этап 9's job. Trigger manually as an asynq task (`ai:generate`, `cmd/worker`):
+`internal/ai` generates a personalized four-block explanation (what happened / why / what changed / what it means for you) for an `(event, user)` pair, using Anthropic Claude (`claude-opus-5`) and that user's context (Этап 4). Requires `ANTHROPIC_API_KEY` in the environment (`cmd/worker` only). No HTTP endpoint. As of Этап 9, `internal/briefing` calls this directly (in-process, not via a separate queued task) for events selected into a user's briefing — see below.
 
-```json
-{"event_id": "<event uuid>", "user_id": "<user uuid>"}
-```
+### Briefing generation (Этап 9)
+
+`internal/briefing` builds a morning/evening briefing for each user: events relevant to them (covered by their own sources), not already included in a previous briefing, up to the 10 most important, each with an AI explanation (generated on demand if missing). No HTTP endpoint yet.
+
+A built-in scheduler (`asynq.Scheduler`, UTC, no per-user timezone yet) fires automatically at **08:00 and 20:00 UTC**, dispatching a `briefing:build` task per user who has at least one source — no manual trigger needed. See `ARCHITECTURE.md` §7 for the relevance rule, dedup logic, and the known limitation of running the scheduler inside `cmd/worker` (fine for a single worker instance; would need to move to its own process if `cmd/worker` is scaled to multiple replicas).

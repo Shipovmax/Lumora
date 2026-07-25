@@ -8,6 +8,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Briefing struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Type        string             `json:"type"`
+	GeneratedAt pgtype.Timestamptz `json:"generated_at"`
+}
+
+type BriefingEvent struct {
+	BriefingID pgtype.UUID `json:"briefing_id"`
+	EventID    pgtype.UUID `json:"event_id"`
+	Rank       int32       `json:"rank"`
+}
+
 type Event struct {
 	ID          pgtype.UUID        `json:"id"`
 	Topic       string             `json:"topic"`

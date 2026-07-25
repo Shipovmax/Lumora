@@ -8,6 +8,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Event struct {
+	ID          pgtype.UUID        `json:"id"`
+	Topic       string             `json:"topic"`
+	Title       string             `json:"title"`
+	MatchText   string             `json:"match_text"`
+	Importance  int32              `json:"importance"`
+	SourceCount int32              `json:"source_count"`
+	FirstSeenAt pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt  pgtype.Timestamptz `json:"last_seen_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Post struct {
 	ID          pgtype.UUID        `json:"id"`
 	SourceID    pgtype.UUID        `json:"source_id"`
@@ -17,6 +30,7 @@ type Post struct {
 	Content     string             `json:"content"`
 	PublishedAt pgtype.Timestamptz `json:"published_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	EventID     pgtype.UUID        `json:"event_id"`
 }
 
 type RefreshToken struct {

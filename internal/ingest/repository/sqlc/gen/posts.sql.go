@@ -15,7 +15,7 @@ const insertPostIgnoreDuplicate = `-- name: InsertPostIgnoreDuplicate :one
 INSERT INTO posts (source_id, external_id, title, url, content, published_at)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (source_id, external_id) DO NOTHING
-RETURNING id, source_id, external_id, title, url, content, published_at, created_at
+RETURNING id, source_id, external_id, title, url, content, published_at, created_at, event_id
 `
 
 type InsertPostIgnoreDuplicateParams struct {
@@ -46,6 +46,7 @@ func (q *Queries) InsertPostIgnoreDuplicate(ctx context.Context, arg InsertPostI
 		&i.Content,
 		&i.PublishedAt,
 		&i.CreatedAt,
+		&i.EventID,
 	)
 	return i, err
 }

@@ -211,3 +211,7 @@ For `type: "youtube"`, `url` must be the channel's public Atom feed, e.g. `https
 ```
 
 Periodic auto-polling of enabled sources is intentionally deferred (see `ARCHITECTURE.md` §7).
+
+### Event processing (Этап 7)
+
+After a successful import, the worker automatically enqueues `pipeline:process` for the newly saved publications — `internal/pipeline` clusters them into events (near-duplicate/related publications from different sources become one event), assigns a topic (`ai`/`economy`/`crypto`/`world`/`other`) and an importance score based on how many independent sources cover the event. No ML/embeddings and no HTTP endpoint yet — see `ARCHITECTURE.md` §7 for the clustering approach and its known simplifications.

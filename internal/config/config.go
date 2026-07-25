@@ -18,6 +18,7 @@ type Config struct {
 	Worker   WorkerConfig
 	Postgres PostgresConfig
 	Redis    RedisConfig
+	Auth     AuthConfig
 }
 
 type ServerConfig struct {
@@ -34,6 +35,12 @@ func (s ServerConfig) Addr() string {
 
 type WorkerConfig struct {
 	Concurrency int `env:"WORKER_CONCURRENCY" envDefault:"10"`
+}
+
+type AuthConfig struct {
+	JWTSecret       string        `env:"JWT_SECRET,required"`
+	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
+	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"720h"`
 }
 
 type PostgresConfig struct {

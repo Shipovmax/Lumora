@@ -36,7 +36,9 @@ Lumora/
 ├── cmd/
 │   ├── api/                    # HTTP REST API (Этап 11)
 │   │   └── main.go
-│   └── worker/                 # asynq worker: ingest/pipeline/ai/briefing/notification
+│   ├── worker/                 # asynq worker: ingest/pipeline/ai/briefing/notification
+│   │   └── main.go
+│   └── migrate/                 # тонкая обёртка над goose-библиотекой (без CLI со всеми драйверами)
 │       └── main.go
 ├── internal/
 │   ├── platform/                # сквозная инфраструктура, не бизнес-логика
@@ -57,7 +59,10 @@ Lumora/
 │   ├── briefing/                  # Этап 9
 │   ├── notification/              # Этап 10
 │   └── apihttp/                   # Этап 11: корневой роутер, агрегирующий все transport/http
-├── migrations/                    # goose SQL миграции, один общий список для всей БД
+├── migrations/                    # goose SQL миграции (Up/Down), один общий список для всей БД
+├── db/
+│   └── schema.sql                 # кумулятивная схема (только CREATE) — источник типов для sqlc,
+│                                   # обновляется в той же задаче, что и новая goose-миграция
 ├── deployments/
 │   ├── Dockerfile
 │   └── docker-compose.yml
@@ -90,21 +95,21 @@ internal/<domain>/
 
 ## 3. Домены и соответствие этапам `task.md`
 
-| Этап | Домен(ы) | Ответственность |
-|---|---|---|
-| 1. Инициализация | `internal/platform/*`, `internal/config`, `cmd/api`, `cmd/worker`, `deployments/` | БД, Redis, конфиг, логи, graceful shutdown, health-check |
-| 2. Авторизация | `internal/auth` | Регистрация, логин, JWT, refresh, logout |
-| 3. Пользователь | `internal/user` | Профиль: имя, страна, язык, профессия, интересы, темы |
-| 4. Контекст пользователя | `internal/usercontext` | Хранение/редактирование AI-контекста |
-| 5. Источники | `internal/source` | RSS/YouTube/Telegram, интерфейс `Fetcher` на тип источника |
-| 6. Импорт данных | `internal/ingest` | Получение публикаций, дедуп, подготовка текста (asynq: `ingest:fetch`) |
-| 7. Обработка событий | `internal/pipeline` | Очистка, дедуп, кластеризация, тема, важность (asynq: `pipeline:process`) |
-| 8. AI | `internal/ai` | Интерфейс `Provider`, 4 блока на событие с учётом контекста (asynq: `ai:generate`) |
-| 9. Генерация брифинга | `internal/briefing` | Утренний/вечерний брифинг из важных событий (asynq: `briefing:build`) |
-| 10. Push-уведомления | `internal/notification` | Интерфейс `Sender` (FCM/APNs), только действительно важные события (asynq: `notification:push`) |
-| 11. Frontend API | `internal/apihttp` + `transport/http` каждого домена | REST API, OpenAPI-документация в `docs/openapi.yaml` |
-| 12. Тестирование | `*_test.go` рядом с кодом в каждом домене | Unit (testify) + Integration (testcontainers-go) |
-| 13. Документация | `README.md`, `ARCHITECTURE.md`, `docs/` | Обновляются после каждой завершённой задачи |
+| Этап | Домен(ы) | Ответственность | Статус |
+|---|---|---|---|
+| 1. Инициализация | `internal/platform/*`, `internal/config`, `cmd/api`, `cmd/worker`, `deployments/` | БД, Redis, конфиг, логи, graceful shutdown, health-check | ✅ |
+| 2. Авторизация | `internal/auth`, `internal/platform/jwtauth`, `internal/apihttp` | Регистрация, логин, JWT (access) + opaque refresh-токены с ротацией, logout, получение профиля (`/api/v1/auth/*`) | ✅ |
+| 3. Пользователь | `internal/user` | Профиль: имя, страна, язык, профессия, интересы, темы | — |
+| 4. Контекст пользователя | `internal/usercontext` | Хранение/редактирование AI-контекста | — |
+| 5. Источники | `internal/source` | RSS/YouTube/Telegram, интерфейс `Fetcher` на тип источника | — |
+| 6. Импорт данных | `internal/ingest` | Получение публикаций, дедуп, подготовка текста (asynq: `ingest:fetch`) | — |
+| 7. Обработка событий | `internal/pipeline` | Очистка, дедуп, кластеризация, тема, важность (asynq: `pipeline:process`) | — |
+| 8. AI | `internal/ai` | Интерфейс `Provider`, 4 блока на событие с учётом контекста (asynq: `ai:generate`) | — |
+| 9. Генерация брифинга | `internal/briefing` | Утренний/вечерний брифинг из важных событий (asynq: `briefing:build`) | — |
+| 10. Push-уведомления | `internal/notification` | Интерфейс `Sender` (FCM/APNs), только действительно важные события (asynq: `notification:push`) | — |
+| 11. Frontend API | `internal/apihttp` + `transport/http` каждого домена | REST API, OpenAPI-документация в `docs/openapi.yaml` | частично (auth смонтирован, OpenAPI не оформлен) |
+| 12. Тестирование | `*_test.go` рядом с кодом в каждом домене | Unit (testify) + Integration (testcontainers-go) | частично (только auth) |
+| 13. Документация | `README.md`, `ARCHITECTURE.md`, `docs/` | Обновляются после каждой завершённой задачи | текущее |
 
 ### Ключевые интерфейсы-порты (объявляются в `domain/`)
 
@@ -140,8 +145,8 @@ PostgreSQL — источник истины для всех сущностей.
 | Область | Выбор | Обоснование |
 |---|---|---|
 | HTTP-роутинг | [`chi`](https://github.com/go-chi/chi) | Совместим с `net/http`, группировка роутов, готовые middleware (RequestID, Recoverer, Timeout) |
-| Доступ к БД | `pgx/v5` + `sqlc` | Типобезопасный код из явного SQL, максимальная производительность, полный контроль над запросами на масштабе |
-| Миграции | `goose` | Простые SQL-миграции, есть `up/down`, хорошо сочетается с sqlc |
+| Доступ к БД | `pgx/v5` + `sqlc` | Типобезопасный код из явного SQL, максимальная производительность, полный контроль над запросами на масштабе. sqlc берёт схему из `db/schema.sql` (только `CREATE`), а не из `migrations/`, — goose-файлы содержат `Up`+`Down` в одном файле, и `DROP` из `Down` ломает вывод типов sqlc, если направить его прямо на `migrations/` |
+| Миграции | `goose` (как библиотека, через `cmd/migrate`) | Простые SQL-миграции с `up/down`. Используем `goose` как Go-библиотеку в собственном `cmd/migrate`, а не `goose/cmd/goose` CLI — у CLI зависимости на все поддерживаемые СУБД (ClickHouse, MSSQL, MySQL, YDB, Turso...), это лишний вес и точки отказа при `go run ...@latest` |
 | Очереди/фоновые задачи | Redis + `hibiken/asynq` | Redis уже в стеке (Этап 1); retry/scheduling/worker pool без Kafka-инфраструктуры на старте |
 | Конфигурация | `godotenv` + `caarlos0/env` | `.env` → строго типизированная структура `Config`, минимум ручного парсинга |
 | Логирование | `log/slog` (stdlib) | Структурные JSON-логи без лишней зависимости |
@@ -164,4 +169,6 @@ PostgreSQL — источник истины для всех сущностей.
 
 ## 7. Следующий шаг
 
-Реализация Этапа 1 (инициализация проекта: `internal/platform/*`, `internal/config`, `cmd/api`, `cmd/worker`, `deployments/docker-compose.yml`, health-check, graceful shutdown) — в соответствии с этой архитектурой, отдельной задачей.
+Этапы 1 (инициализация) и 2 (авторизация) реализованы и провалидированы end-to-end через `docker compose` (register/login/refresh-ротация/logout/me).
+
+Следующий шаг — Этап 3 (профиль пользователя: `internal/user`, поля имя/страна/язык/профессия/интересы/темы, редактирование), по той же слоистой структуре домена.

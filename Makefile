@@ -1,9 +1,7 @@
 -include .env
 export
 
-GOOSE_DSN := "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=$(POSTGRES_SSLMODE)"
-
-.PHONY: run-api run-worker build test vet up down logs migrate-up migrate-down
+.PHONY: run-api run-worker build test vet up down logs migrate-up migrate-down sqlc
 
 run-api:
 	go run ./cmd/api
@@ -16,6 +14,9 @@ build:
 
 test:
 	go test ./...
+
+test-integration:
+	go test -tags=integration ./...
 
 vet:
 	go vet ./...
@@ -30,7 +31,10 @@ logs:
 	docker compose -f deployments/docker-compose.yml logs -f
 
 migrate-up:
-	go run github.com/pressly/goose/v3/cmd/goose@latest -dir migrations postgres $(GOOSE_DSN) up
+	go run ./cmd/migrate up
 
 migrate-down:
-	go run github.com/pressly/goose/v3/cmd/goose@latest -dir migrations postgres $(GOOSE_DSN) down
+	go run ./cmd/migrate down
+
+sqlc:
+	go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest generate

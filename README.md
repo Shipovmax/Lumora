@@ -121,6 +121,12 @@ docker compose -f deployments/docker-compose.yml up --build -d
 
 This starts PostgreSQL, Redis, the REST API (`cmd/api`) and the background worker (`cmd/worker`).
 
+Apply database migrations:
+
+```bash
+make migrate-up
+```
+
 Check that everything is up:
 
 ```bash
@@ -128,4 +134,24 @@ curl http://localhost:8080/healthz   # liveness
 curl http://localhost:8080/readyz    # readiness: checks Postgres + Redis
 ```
 
-Shortcuts are available via `Makefile`: `make up`, `make down`, `make logs`, `make run-api`, `make run-worker`, `make migrate-up`, `make migrate-down`, `make test`.
+Shortcuts are available via `Makefile`: `make up`, `make down`, `make logs`, `make run-api`, `make run-worker`, `make migrate-up`, `make migrate-down`, `make sqlc`, `make test`, `make test-integration`.
+
+## API
+
+All endpoints are under `/api/v1`. Auth (Этап 2):
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/v1/auth/register` | — | Create a user, returns access + refresh tokens |
+| POST | `/api/v1/auth/login` | — | Exchange email/password for tokens |
+| POST | `/api/v1/auth/refresh` | — | Rotate a refresh token for a new token pair |
+| POST | `/api/v1/auth/logout` | — | Revoke a refresh token (idempotent) |
+| GET | `/api/v1/auth/me` | Bearer access token | Current user's profile |
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"supersecret1"}'
+```
+
+Access tokens are short-lived JWTs (`ACCESS_TOKEN_TTL`, default 15m). Refresh tokens are opaque, stored hashed, rotated on every `/refresh` call, and revocable via `/logout`.

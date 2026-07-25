@@ -13,10 +13,15 @@ import (
 	"github.com/hibiken/asynq"
 
 	"github.com/Shipovmax/Lumora/internal/config"
+	ingestrepo "github.com/Shipovmax/Lumora/internal/ingest/repository"
+	ingestservice "github.com/Shipovmax/Lumora/internal/ingest/service"
+	ingestworker "github.com/Shipovmax/Lumora/internal/ingest/transport/worker"
 	"github.com/Shipovmax/Lumora/internal/platform/logger"
 	"github.com/Shipovmax/Lumora/internal/platform/postgres"
 	"github.com/Shipovmax/Lumora/internal/platform/queue"
 	"github.com/Shipovmax/Lumora/internal/platform/redis"
+	"github.com/Shipovmax/Lumora/internal/source/fetcher"
+	sourcerepo "github.com/Shipovmax/Lumora/internal/source/repository"
 )
 
 func main() {
@@ -52,7 +57,13 @@ func run() error {
 	srv := queue.NewServer(cfg.Redis, cfg.Worker.Concurrency)
 	mux := asynq.NewServeMux()
 
-	// Этапы 6–10 добавят сюда: mux.HandleFunc(queue.TypeIngestFetch, ingestHandler.Handle)
+	sourceRepo := sourcerepo.New(pgPool)
+	ingestSvc := ingestservice.New(ingestrepo.New(pgPool), sourceRepo, fetcher.NewRegistry())
+	ingestHandler := ingestworker.NewHandler(ingestSvc, log)
+
+	mux.HandleFunc(queue.TypeIngestFetch, ingestHandler.HandleFetch)
+
+	// Этапы 7–10 добавят сюда обработчики pipeline:process, ai:generate, briefing:build, notification:push.
 
 	if err := srv.Start(mux); err != nil {
 		return err

@@ -76,6 +76,22 @@ func (r *Repository) GetSource(ctx context.Context, userID, id string) (domain.S
 	return toDomainSource(s), nil
 }
 
+func (r *Repository) GetSourceByID(ctx context.Context, id string) (domain.Source, error) {
+	sid, err := parseUUID(id)
+	if err != nil {
+		return domain.Source{}, domain.ErrSourceNotFound
+	}
+
+	s, err := r.q.GetSourceByID(ctx, sid)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Source{}, domain.ErrSourceNotFound
+		}
+		return domain.Source{}, err
+	}
+	return toDomainSource(s), nil
+}
+
 func (r *Repository) SetEnabled(ctx context.Context, userID, id string, enabled bool) (domain.Source, error) {
 	uid, sid, err := parseUUIDPair(userID, id)
 	if err != nil {

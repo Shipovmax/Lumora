@@ -89,6 +89,27 @@ func (q *Queries) GetSource(ctx context.Context, arg GetSourceParams) (Source, e
 	return i, err
 }
 
+const getSourceByID = `-- name: GetSourceByID :one
+SELECT id, user_id, type, name, url, enabled, created_at, updated_at FROM sources
+WHERE id = $1
+`
+
+func (q *Queries) GetSourceByID(ctx context.Context, id pgtype.UUID) (Source, error) {
+	row := q.db.QueryRow(ctx, getSourceByID, id)
+	var i Source
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Type,
+		&i.Name,
+		&i.Url,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listSources = `-- name: ListSources :many
 SELECT id, user_id, type, name, url, enabled, created_at, updated_at FROM sources
 WHERE user_id = $1

@@ -71,6 +71,17 @@ func (f *fakeRepository) GetSource(_ context.Context, userID, id string) (domain
 	return s, nil
 }
 
+func (f *fakeRepository) GetSourceByID(_ context.Context, id string) (domain.Source, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	s, ok := f.sources[id]
+	if !ok {
+		return domain.Source{}, domain.ErrSourceNotFound
+	}
+	return s, nil
+}
+
 func (f *fakeRepository) SetEnabled(_ context.Context, userID, id string, enabled bool) (domain.Source, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

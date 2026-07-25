@@ -184,7 +184,7 @@ curl -X PUT http://localhost:8080/api/v1/context \
   -d '{"content":"Interested in deep tech and AI research, skip celebrity news."}'
 ```
 
-Sources (Этап 5) — RSS/YouTube/Telegram sources a user subscribes to. Fetching/importing publications is Этап 6 (`internal/ingest`, not implemented yet); for now sources are just registered and enabled/disabled:
+Sources (Этап 5) — RSS/YouTube/Telegram sources a user subscribes to:
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
@@ -199,3 +199,15 @@ curl -X POST http://localhost:8080/api/v1/sources \
   -H "Content-Type: application/json" \
   -d '{"type":"rss","name":"Hacker News","url":"https://news.ycombinator.com/rss"}'
 ```
+
+For `type: "youtube"`, `url` must be the channel's public Atom feed, e.g. `https://www.youtube.com/feeds/videos.xml?channel_id=<CHANNEL_ID>`. For `type: "telegram"`, `url` must be a public channel link, e.g. `https://t.me/<channel>`.
+
+### Importing publications (Этап 6)
+
+`internal/ingest` fetches new publications for a source, deduplicates them (`posts.source_id + external_id` is unique) and stores them. There is no HTTP endpoint and no automatic scheduler yet — import runs as an asynq task (`ingest:fetch`, `cmd/worker`) that must be enqueued manually for now, e.g. via [`asynqmon`](https://github.com/hibiken/asynqmon) or a small script, with a JSON payload:
+
+```json
+{"source_id": "<source uuid>"}
+```
+
+Periodic auto-polling of enabled sources is intentionally deferred (see `ARCHITECTURE.md` §7).

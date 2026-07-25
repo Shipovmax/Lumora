@@ -14,6 +14,7 @@ type Querier interface {
 	CreateSource(ctx context.Context, arg CreateSourceParams) (Source, error)
 	DeleteSource(ctx context.Context, arg DeleteSourceParams) (int64, error)
 	GetSource(ctx context.Context, arg GetSourceParams) (Source, error)
+	GetSourceByID(ctx context.Context, id pgtype.UUID) (Source, error)
 	ListSources(ctx context.Context, userID pgtype.UUID) ([]Source, error)
 	SetSourceEnabled(ctx context.Context, arg SetSourceEnabledParams) (Source, error)
 }

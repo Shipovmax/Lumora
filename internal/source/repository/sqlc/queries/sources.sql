@@ -12,6 +12,10 @@ ORDER BY created_at ASC;
 SELECT * FROM sources
 WHERE user_id = $1 AND id = $2;
 
+-- name: GetSourceByID :one
+SELECT * FROM sources
+WHERE id = $1;
+
 -- name: SetSourceEnabled :one
 UPDATE sources
 SET enabled = $3, updated_at = now()

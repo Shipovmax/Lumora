@@ -9,6 +9,12 @@ import (
 	"github.com/Shipovmax/Lumora/internal/config"
 )
 
+// Типы задач пайплайна. Каждый асинхронный переход между стадиями (Этапы 6–10)
+// — отдельный тип, обработчик регистрируется доменом, которому он принадлежит.
+const (
+	TypeIngestFetch = "ingest:fetch"
+)
+
 func redisConnOpt(cfg config.RedisConfig) asynq.RedisClientOpt {
 	return asynq.RedisClientOpt{
 		Addr:     cfg.Addr,

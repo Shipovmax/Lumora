@@ -11,6 +11,10 @@ type Repository interface {
 	CreateSource(ctx context.Context, userID string, typ Type, name, url string) (Source, error)
 	ListSources(ctx context.Context, userID string) ([]Source, error)
 	GetSource(ctx context.Context, userID, id string) (Source, error)
+	// GetSourceByID возвращает источник без привязки к пользователю — используется
+	// системными вызовами (например, воркером импорта, Этап 6), у которых нет
+	// авторизованного userID запроса.
+	GetSourceByID(ctx context.Context, id string) (Source, error)
 	SetEnabled(ctx context.Context, userID, id string, enabled bool) (Source, error)
 	DeleteSource(ctx context.Context, userID, id string) error
 }

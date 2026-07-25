@@ -8,6 +8,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Post struct {
+	ID          pgtype.UUID        `json:"id"`
+	SourceID    pgtype.UUID        `json:"source_id"`
+	ExternalID  string             `json:"external_id"`
+	Title       string             `json:"title"`
+	Url         string             `json:"url"`
+	Content     string             `json:"content"`
+	PublishedAt pgtype.Timestamptz `json:"published_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type RefreshToken struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`

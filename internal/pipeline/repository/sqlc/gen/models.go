@@ -21,6 +21,15 @@ type BriefingEvent struct {
 	Rank       int32       `json:"rank"`
 }
 
+type DeviceToken struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Platform  string             `json:"platform"`
+	Token     string             `json:"token"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Event struct {
 	ID          pgtype.UUID        `json:"id"`
 	Topic       string             `json:"topic"`

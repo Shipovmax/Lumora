@@ -103,3 +103,29 @@ Close the app.
 We don't compete for attention.
 
 We give attention back.
+
+---
+
+## Architecture
+
+Backend is a modular monolith written in Go. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design: layering, module boundaries, tech stack, and the mapping between the development stages below and the codebase.
+
+## Getting Started
+
+Requirements: Docker + Docker Compose, Go 1.26+ (for local, non-container development).
+
+```bash
+cp .env.example .env
+docker compose -f deployments/docker-compose.yml up --build -d
+```
+
+This starts PostgreSQL, Redis, the REST API (`cmd/api`) and the background worker (`cmd/worker`).
+
+Check that everything is up:
+
+```bash
+curl http://localhost:8080/healthz   # liveness
+curl http://localhost:8080/readyz    # readiness: checks Postgres + Redis
+```
+
+Shortcuts are available via `Makefile`: `make up`, `make down`, `make logs`, `make run-api`, `make run-worker`, `make migrate-up`, `make migrate-down`, `make test`.

@@ -4,6 +4,22 @@ package domain
 
 import "time"
 
+// Платформы устройств, поддерживаемые регистрацией токена.
+const (
+	PlatformIOS     = "ios"
+	PlatformAndroid = "android"
+	PlatformWeb     = "web"
+)
+
+func ValidPlatform(platform string) bool {
+	switch platform {
+	case PlatformIOS, PlatformAndroid, PlatformWeb:
+		return true
+	default:
+		return false
+	}
+}
+
 type DeviceToken struct {
 	ID        string
 	UserID    string

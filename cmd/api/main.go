@@ -13,6 +13,9 @@ import (
 	authservice "github.com/Shipovmax/Lumora/internal/auth/service"
 	authhttp "github.com/Shipovmax/Lumora/internal/auth/transport/http"
 	"github.com/Shipovmax/Lumora/internal/config"
+	notificationrepo "github.com/Shipovmax/Lumora/internal/notification/repository"
+	notificationservice "github.com/Shipovmax/Lumora/internal/notification/service"
+	notificationhttp "github.com/Shipovmax/Lumora/internal/notification/transport/http"
 	"github.com/Shipovmax/Lumora/internal/platform/httpserver"
 	"github.com/Shipovmax/Lumora/internal/platform/jwtauth"
 	"github.com/Shipovmax/Lumora/internal/platform/logger"
@@ -70,12 +73,18 @@ func run() error {
 	userSvc := userservice.New(userrepo.New(pgPool))
 	userContextSvc := usercontextservice.New(usercontextrepo.New(pgPool))
 	sourceSvc := sourceservice.New(sourcerepo.New(pgPool))
+	// Sender не нужен cmd/api: этот процесс только регистрирует/удаляет токены
+	// устройств, саму отправку push (NotifyEvent) делает только cmd/worker
+	// (см. cmd/worker/main.go) — так же, как ANTHROPIC_API_KEY нужен только
+	// воркеру и не читается в cmd/api.
+	notificationSvc := notificationservice.New(notificationrepo.New(pgPool), nil, log)
 
 	apihttp.Mount(router, apihttp.Deps{
 		Auth:           authhttp.NewHandler(authSvc, log),
 		User:           userhttp.NewHandler(userSvc, log),
 		UserContext:    usercontexthttp.NewHandler(userContextSvc, log),
 		Source:         sourcehttp.NewHandler(sourceSvc, log),
+		Notification:   notificationhttp.NewHandler(notificationSvc, log),
 		AuthMiddleware: tokenIssuer.Middleware,
 	})
 

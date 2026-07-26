@@ -225,3 +225,21 @@ After a successful import, the worker automatically enqueues `pipeline:process` 
 `internal/briefing` builds a morning/evening briefing for each user: events relevant to them (covered by their own sources), not already included in a previous briefing, up to the 10 most important, each with an AI explanation (generated on demand if missing). No HTTP endpoint yet.
 
 A built-in scheduler (`asynq.Scheduler`, UTC, no per-user timezone yet) fires automatically at **08:00 and 20:00 UTC**, dispatching a `briefing:build` task per user who has at least one source — no manual trigger needed. See `ARCHITECTURE.md` §7 for the relevance rule, dedup logic, and the known limitation of running the scheduler inside `cmd/worker` (fine for a single worker instance; would need to move to its own process if `cmd/worker` is scaled to multiple replicas).
+
+### Push notifications (Этап 10)
+
+`internal/notification` registers device tokens and pushes a notification only for events genuinely worth interrupting the user for — no notification spam:
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/v1/notifications/devices` | Bearer access token | Register/refresh a device token (`platform`: `ios`\|`android`\|`web`, `token`) |
+| DELETE | `/api/v1/notifications/devices` | Bearer access token | Remove a device token (only if it belongs to the caller) |
+
+```bash
+curl -X POST http://localhost:8080/api/v1/notifications/devices \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"platform":"android","token":"<fcm-registration-token>"}'
+```
+
+After building a briefing, the worker automatically enqueues `notification:push` for events with importance ≥ 60 (roughly: confirmed by 3+ independent sources — see `ARCHITECTURE.md` §7 for how importance is computed). Delivery goes through Firebase Cloud Messaging (HTTP v1 API); a token FCM reports as unregistered/invalid is removed automatically so it isn't retried. Requires `FCM_PROJECT_ID` and `FCM_CREDENTIALS_FILE` in the environment (`cmd/worker` only — see `.env.example`); without them the worker still starts, only `notification:push` fails until configured.

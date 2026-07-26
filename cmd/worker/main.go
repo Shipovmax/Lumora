@@ -26,6 +26,10 @@ import (
 	ingestrepo "github.com/Shipovmax/Lumora/internal/ingest/repository"
 	ingestservice "github.com/Shipovmax/Lumora/internal/ingest/service"
 	ingestworker "github.com/Shipovmax/Lumora/internal/ingest/transport/worker"
+	notificationprovider "github.com/Shipovmax/Lumora/internal/notification/provider"
+	notificationrepo "github.com/Shipovmax/Lumora/internal/notification/repository"
+	notificationservice "github.com/Shipovmax/Lumora/internal/notification/service"
+	notificationworker "github.com/Shipovmax/Lumora/internal/notification/transport/worker"
 	pipelinerepo "github.com/Shipovmax/Lumora/internal/pipeline/repository"
 	pipelineservice "github.com/Shipovmax/Lumora/internal/pipeline/service"
 	pipelineworker "github.com/Shipovmax/Lumora/internal/pipeline/transport/worker"
@@ -89,16 +93,18 @@ func run() error {
 
 	briefingRepo := briefingrepo.New(pgPool)
 	briefingSvc := briefingservice.New(briefingRepo, aiRepo, aiSvc, log)
-	briefingHandler := briefingworker.NewHandler(briefingSvc, log)
+	briefingHandler := briefingworker.NewHandler(briefingSvc, asynqClient, log)
 	briefingDispatchHandler := briefingworker.NewDispatchHandler(briefingRepo, asynqClient, log)
+
+	notificationSvc := notificationservice.New(notificationrepo.New(pgPool), notificationprovider.NewFCMSender(), log)
+	notificationHandler := notificationworker.NewHandler(notificationSvc, log)
 
 	mux.HandleFunc(queue.TypeIngestFetch, ingestHandler.HandleFetch)
 	mux.HandleFunc(queue.TypePipelineProcess, pipelineHandler.HandleProcess)
 	mux.HandleFunc(queue.TypeAIGenerate, aiHandler.HandleGenerate)
 	mux.HandleFunc(queue.TypeBriefingBuild, briefingHandler.HandleBuild)
 	mux.HandleFunc(queue.TypeBriefingDispatch, briefingDispatchHandler.HandleDispatch)
-
-	// Этап 10 добавит сюда обработчик notification:push.
+	mux.HandleFunc(queue.TypeNotificationPush, notificationHandler.HandlePush)
 
 	scheduler := queue.NewScheduler(cfg.Redis)
 

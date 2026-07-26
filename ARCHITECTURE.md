@@ -106,16 +106,16 @@ internal/<domain>/
 | 7. Обработка событий | `internal/pipeline` | Очистка, дедуп, кластеризация, тема, важность (asynq: `pipeline:process`) | ✅ |
 | 8. AI | `internal/ai` | Интерфейс `Provider`, 4 блока на событие с учётом контекста (asynq: `ai:generate`) | ✅ (провайдер — Anthropic Claude) |
 | 9. Генерация брифинга | `internal/briefing` | Утренний/вечерний брифинг из важных событий (asynq: `briefing:build`) | ✅ |
-| 10. Push-уведомления | `internal/notification` | Интерфейс `Sender` (FCM/APNs), только действительно важные события (asynq: `notification:push`) | — |
-| 11. Frontend API | `internal/apihttp` + `transport/http` каждого домена | REST API, OpenAPI-документация в `docs/openapi.yaml` | частично (auth, user, usercontext, source смонтированы, OpenAPI не оформлен) |
-| 12. Тестирование | `*_test.go` рядом с кодом в каждом домене | Unit (testify) + Integration (testcontainers-go) | частично (auth, user, usercontext, source, ingest, pipeline, ai, briefing) |
+| 10. Push-уведомления | `internal/notification` | Интерфейс `Sender` (FCM), только действительно важные события (asynq: `notification:push`) | ✅ |
+| 11. Frontend API | `internal/apihttp` + `transport/http` каждого домена | REST API, OpenAPI-документация в `docs/openapi.yaml` | частично (auth, user, usercontext, source, notification смонтированы, OpenAPI не оформлен) |
+| 12. Тестирование | `*_test.go` рядом с кодом в каждом домене | Unit (testify) + Integration (testcontainers-go) | частично (auth, user, usercontext, source, ingest, pipeline, ai, briefing, notification) |
 | 13. Документация | `README.md`, `ARCHITECTURE.md`, `docs/` | Обновляются после каждой завершённой задачи | текущее |
 
 ### Ключевые интерфейсы-порты (объявляются в `domain/`)
 
 - `source.Fetcher` — `Fetch(ctx, Source) ([]RawPost, error)`; реализации в `internal/source/fetcher`: `RSSFetcher` (`gofeed`, покрывает `rss` и `youtube`), `TelegramFetcher` (скрейпинг `t.me/s/<channel>`).
 - `ai.Provider` — `Explain(ctx, EventInput, userContext string) (ProviderResult, error)`; реализация — `internal/ai/provider.ClaudeProvider` (Anthropic Claude, `claude-opus-5`, согласовано с пользователем 2026-07-25); интерфейс не завязан на конкретного вендора.
-- `notification.Sender` — `Send(ctx, PushMessage) error`; реализации: FCM, APNs.
+- `notification.Sender` — `Send(ctx, PushMessage) error`; реализация — `internal/notification/provider.FCMSender` (Firebase Cloud Messaging HTTP v1 API).
 - `auth.TokenIssuer` / `auth.Repository`, `user.Repository`, и т.д. — по одному репозиторий-порту на домен, реализация в `repository/`.
 
 ---
@@ -156,6 +156,7 @@ PostgreSQL — источник истины для всех сущностей.
 | Парсинг RSS/Atom | `mmcdole/gofeed` | Один парсер закрывает и `rss`, и `youtube` — публичный Atom-фид канала YouTube (`youtube.com/feeds/videos.xml?channel_id=...`) имеет тот же формат |
 | Парсинг HTML (Telegram) | `PuerkitoBio/goquery` | Скрейпинг публичной `t.me/s/<channel>` (Этап 6) — jQuery-подобный API поверх `golang.org/x/net/html`, стандартный выбор для разбора HTML в Go |
 | AI-провайдер | `anthropics/anthropic-sdk-go`, модель `claude-opus-5` | Согласовано с пользователем 2026-07-25 (Этап 8). Структурированный вывод (`output_config.format` с JSON Schema) вместо assistant prefill — prefill не поддерживается на этой модели |
+| Push-провайдер | FCM HTTP v1 API + `golang.org/x/oauth2/google` | Согласовано с пользователем 2026-07-25 (Этап 10). Один API покрывает и Android, и iOS (оба типа устройств получают push через FCM). Прямой HTTP-вызов с OAuth2-токеном сервисного аккаунта вместо `firebase-admin-go` — из всего Admin SDK нужен только этот вызов, тянуть весь SDK лишнее |
 
 ---
 
@@ -172,7 +173,7 @@ PostgreSQL — источник истины для всех сущностей.
 
 ## 7. Следующий шаг
 
-Этапы 1 (инициализация), 2 (авторизация), 3 (профиль пользователя), 4 (контекст пользователя), 5 (источники), 6 (импорт данных), 7 (обработка событий), 8 (AI) и 9 (генерация брифинга) реализованы по одинаковой слоистой структуре домена. Этап 2 провалидирован end-to-end через `docker compose` (register/login/refresh-ротация/logout/me).
+Этапы 1 (инициализация), 2 (авторизация), 3 (профиль пользователя), 4 (контекст пользователя), 5 (источники), 6 (импорт данных), 7 (обработка событий), 8 (AI), 9 (генерация брифинга) и 10 (push-уведомления) реализованы по одинаковой слоистой структуре домена. Этап 2 провалидирован end-to-end через `docker compose` (register/login/refresh-ротация/logout/me).
 
 `internal/user` хранит профиль в таблице `user_profiles` (1:1 к `users`, `ON DELETE CASCADE`). `GET /api/v1/user/profile` создаёт пустой профиль при первом обращении (`GetOrCreateProfile`), `PUT` — полная замена (`UpsertProfile`); оба запроса — upsert через `ON CONFLICT (user_id) DO UPDATE`, чтобы не требовать отдельного шага создания профиля при регистрации и не связывать домены `auth`/`user` напрямую.
 
@@ -210,4 +211,11 @@ PostgreSQL — источник истины для всех сущностей.
 - **Известное ограничение**: `asynq.Scheduler` в текущей схеме работает в том же процессе `cmd/worker`, что и обработчик задач. При масштабировании `cmd/worker` до нескольких реплик планировщик задвоится (каждая реплика будет ставить `briefing:dispatch` по своему расписанию) — на масштабе MVP (один процесс) это не проблема; при горизонтальном масштабировании воркера планировщик нужно будет вынести в отдельный процесс/реплику с лидер-election или отдельный `cmd/scheduler`.
 - Домен без HTTP: как `ingest`/`pipeline`/`ai`, только `transport/worker`.
 
-Следующий шаг — Этап 10 (push-уведомления: `internal/notification`, интерфейс `Sender` (FCM/APNs), отправка только для действительно важных событий; asynq-задача `notification:push`, вероятный триггер — после `briefing:build`, если в брифинге есть событие с высокой важностью).
+`internal/notification` (Этап 10) — регистрация устройств и push-уведомления:
+- **Хранение токенов**: `device_tokens` (`user_id`, `platform`, `token UNIQUE`). `RegisterDevice` — upsert по токену (`ON CONFLICT (token) DO UPDATE`), тот же приём, что и в других доменах: переустановка приложения или смена аккаунта на одном устройстве переносит токен на нового владельца, а не плодит дубли.
+- **`notification.Service.RegisterDevice/RemoveDeviceToken`** (`internal/notification/service`) — HTTP-уровень (`POST/DELETE /api/v1/notifications/devices`). `RemoveDeviceToken` проверяет, что удаляемый токен принадлежит вызывающему пользователю (сверка со списком его же токенов), прежде чем удалить — иначе один пользователь мог бы удалить чужой токен по угаданному значению.
+- **`notification.Service.NotifyEvent(ctx, userID, PushMessage)`** — отправляет на все зарегистрированные устройства пользователя через порт `domain.Sender`. Ошибка отправки на одно устройство не проваливает остальные (логируется и пропускается); если `Sender` возвращает `domain.ErrInvalidToken` (устройство больше не существует), токен удаляется из хранилища. Нет ни одного устройства — `domain.ErrNoDeviceTokens`, тот же паттерн «нормальное состояние, не ошибка», что и `briefing.ErrNoRelevantEvents`.
+- **Провайдер** (согласовано с пользователем 2026-07-25): Firebase Cloud Messaging, HTTP v1 API напрямую (`internal/notification/provider.FCMSender`) — без `firebase-admin-go`, из всего Admin SDK нужен только OAuth2-токен сервисного аккаунта (`golang.org/x/oauth2/google`) и один HTTP POST. Учётные данные (`FCM_PROJECT_ID`, `FCM_CREDENTIALS_FILE`) читаются напрямую из окружения и **лениво** — при первом реальном `Send`, а не в конструкторе, — чтобы отсутствие FCM-настроек не мешало `cmd/worker` запускаться одной командой (task.md, Этап 1); без них падает только конкретная задача `notification:push`, не весь процесс. FCM отвечает 404 или телом с `UNREGISTERED` для несуществующих токенов — это транслируется в `domain.ErrInvalidToken`.
+- **Триггер**: не постановка `notification:push` из HTTP, а `briefingworker.Handler.HandleBuild` (`internal/briefing/transport/worker`) — после успешного `briefing:build` перебирает события собранного брифинга и ставит `queue.TypeNotificationPush` для тех, чья важность (Этап 7) ≥ `pushImportanceThreshold = 60` (эквивалент 3+ независимых источников). Порог — именованная MVP-константа в `briefingworker`, кандидат на пересмотр по метрикам, тот же статус, что и `similarityThreshold` в `pipeline`. Решение оставить постановку задачи в transport-слое `briefing`, а не сделать `notification` прямой зависимостью `briefing/service`, — по прямой рекомендации из этого же документа (§4): переход между стадиями пайплайна — асинхронная задача в очереди, а не прямой вызов чужого домена.
+- Ошибка постановки `notification:push` логируется и не проваливает `briefing:build` — брифинг уже сохранён, push можно поставить в очередь позже вручную (тот же принцип, что у `ingestworker.Handler` для `pipeline:process`).
+- HTTP (`transport/http`) для управления устройствами + `transport/worker` для `notification:push` — единственный домен пайплайна с обоими видами транспорта одновременно.

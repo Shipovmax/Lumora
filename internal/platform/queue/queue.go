@@ -22,6 +22,7 @@ const (
 	TypeAIGenerate       = "ai:generate"
 	TypeBriefingBuild    = "briefing:build"
 	TypeBriefingDispatch = "briefing:dispatch"
+	TypeNotificationPush = "notification:push"
 )
 
 // IngestFetchPayload — payload задачи TypeIngestFetch.
@@ -53,6 +54,15 @@ type BriefingDispatchPayload struct {
 	Type string `json:"type"` // "morning" | "evening"
 }
 
+// NotificationPushPayload — payload задачи TypeNotificationPush. Ставится
+// briefingworker.Handler (Этап 9) для событий брифинга, важность которых
+// превышает порог отправки push (см. ARCHITECTURE.md, Этап 10).
+type NotificationPushPayload struct {
+	UserID string `json:"user_id"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+}
+
 // NewPipelineProcessTask строит задачу TypePipelineProcess для переданных ID
 // публикаций (обычно — только что сохранённых ingest.Service.ImportSource).
 func NewPipelineProcessTask(postIDs []string) (*asynq.Task, error) {
@@ -81,6 +91,16 @@ func NewBriefingDispatchTask(typ string) (*asynq.Task, error) {
 		return nil, fmt.Errorf("marshal %s payload: %w", TypeBriefingDispatch, err)
 	}
 	return asynq.NewTask(TypeBriefingDispatch, payload), nil
+}
+
+// NewNotificationPushTask строит задачу TypeNotificationPush для важного
+// события брифинга конкретного пользователя.
+func NewNotificationPushTask(userID, title, body string) (*asynq.Task, error) {
+	payload, err := json.Marshal(NotificationPushPayload{UserID: userID, Title: title, Body: body})
+	if err != nil {
+		return nil, fmt.Errorf("marshal %s payload: %w", TypeNotificationPush, err)
+	}
+	return asynq.NewTask(TypeNotificationPush, payload), nil
 }
 
 func redisConnOpt(cfg config.RedisConfig) asynq.RedisClientOpt {

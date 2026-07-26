@@ -138,6 +138,8 @@ Shortcuts are available via `Makefile`: `make up`, `make down`, `make logs`, `ma
 
 ## API
 
+Full OpenAPI 3.0 spec, with a request/response example for every endpoint and status code: [`docs/openapi.yaml`](docs/openapi.yaml). Paste it into [editor.swagger.io](https://editor.swagger.io) or any OpenAPI viewer for an interactive read.
+
 All endpoints are under `/api/v1`. Auth (Этап 2):
 
 | Method | Path | Auth | Description |

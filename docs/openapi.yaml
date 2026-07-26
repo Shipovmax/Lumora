@@ -1,0 +1,786 @@
+openapi: 3.0.3
+info:
+  title: Lumora API
+  description: |
+    REST API for Lumora — an AI-powered personal briefing platform.
+
+    All domain endpoints are versioned under `/api/v1`. Authenticated endpoints
+    require a JWT access token obtained from `/api/v1/auth/register` or
+    `/api/v1/auth/login`, sent as `Authorization: Bearer <access_token>`.
+
+    Access tokens are short-lived (`ACCESS_TOKEN_TTL`, default 15m). When one
+    expires, exchange the refresh token via `/api/v1/auth/refresh` for a new
+    pair — refresh tokens rotate on every call, so the old one is invalidated.
+  version: "1.0.0"
+  license:
+    name: Proprietary
+servers:
+  - url: http://localhost:8080
+    description: Local development (docker compose)
+
+tags:
+  - name: system
+    description: Liveness/readiness, no auth, not versioned under /api/v1.
+  - name: auth
+    description: Registration, login, token refresh/logout, current user (Этап 2).
+  - name: user
+    description: Editable user profile (Этап 3).
+  - name: usercontext
+    description: Free-form AI context used to personalize briefings (Этап 4).
+  - name: sources
+    description: RSS/YouTube/Telegram sources a user subscribes to (Этап 5).
+  - name: notifications
+    description: Push notification device tokens (Этап 10).
+
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      summary: Liveness probe
+      description: Always returns 200 if the process is running and accepting connections. Does not check dependencies — use `/readyz` for that.
+      security: []
+      responses:
+        "200":
+          description: Process is alive.
+
+  /readyz:
+    get:
+      tags: [system]
+      summary: Readiness probe
+      description: Returns 200 only if all dependencies (PostgreSQL, Redis) respond. Returns 503 with the failing dependency's error if not.
+      security: []
+      responses:
+        "200":
+          description: All dependencies are reachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResult"
+              example:
+                postgres: ok
+                redis: ok
+        "503":
+          description: At least one dependency is unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResult"
+              example:
+                postgres: ok
+                redis: "dial tcp 127.0.0.1:6379: connect: connection refused"
+
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new user
+      description: Creates a user and returns an access/refresh token pair, same shape as `/login`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            example:
+              email: ada@example.com
+              password: supersecret1
+      responses:
+        "201":
+          description: User created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              example:
+                access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                access_token_expires_at: "2026-07-26T13:15:00Z"
+                refresh_token: 8f14e45fceea167a5a36dedd4bea2543
+                user:
+                  id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                  email: ada@example.com
+                  created_at: "2026-07-26T13:00:00Z"
+        "400":
+          description: Invalid email or password shorter than 8 characters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: password must be at least 8 characters
+        "409":
+          description: Email is already registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: email is already registered
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Log in with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: ada@example.com
+              password: supersecret1
+      responses:
+        "200":
+          description: Authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              example:
+                access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                access_token_expires_at: "2026-07-26T13:15:00Z"
+                refresh_token: 8f14e45fceea167a5a36dedd4bea2543
+                user:
+                  id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                  email: ada@example.com
+                  created_at: "2026-07-26T13:00:00Z"
+        "401":
+          description: Wrong email or password.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: invalid email or password
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate a refresh token
+      description: Exchanges a valid refresh token for a new access/refresh pair. The old refresh token is revoked (single use).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+            example:
+              refresh_token: 8f14e45fceea167a5a36dedd4bea2543
+      responses:
+        "200":
+          description: New token pair issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Refresh token is invalid, expired, or already used/revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: refresh token is invalid, expired or revoked
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke a refresh token
+      description: Idempotent — revoking an already-revoked or unknown token still returns 204.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+            example:
+              refresh_token: 8f14e45fceea167a5a36dedd4bea2543
+      responses:
+        "204":
+          description: Refresh token revoked (or already was).
+
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The authenticated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              example:
+                id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                email: ada@example.com
+                created_at: "2026-07-26T13:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/user/profile:
+    get:
+      tags: [user]
+      summary: Get the current user's profile
+      description: Creates an empty profile on first access — always returns 200, never 404, for the authenticated user's own profile.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The user's profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+              example:
+                user_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                name: Ada Lovelace
+                country: UK
+                language: en
+                profession: Mathematician
+                interests: [computing]
+                topics: [ai]
+                created_at: "2026-07-26T13:00:00Z"
+                updated_at: "2026-07-26T13:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [user]
+      summary: Replace the current user's profile
+      description: Full replacement (all fields), not a partial patch.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+            example:
+              name: Ada Lovelace
+              country: UK
+              language: en
+              profession: Mathematician
+              interests: [computing]
+              topics: [ai]
+      responses:
+        "200":
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "400":
+          description: Name longer than 200 characters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: name must be at most 200 characters
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/context:
+    get:
+      tags: [usercontext]
+      summary: Get the current user's AI context
+      description: Free-form text used to personalize briefing explanations. Creates an empty context on first access.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The user's AI context.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserContext"
+              example:
+                user_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                content: Interested in deep tech and AI research, skip celebrity news.
+                created_at: "2026-07-26T13:00:00Z"
+                updated_at: "2026-07-26T13:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [usercontext]
+      summary: Replace the current user's AI context
+      description: Full replacement. Max 4000 characters.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserContextUpdate"
+            example:
+              content: Interested in deep tech and AI research, skip celebrity news.
+      responses:
+        "200":
+          description: Updated context.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserContext"
+        "400":
+          description: Content longer than 4000 characters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: context must be at most 4000 characters
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/sources:
+    post:
+      tags: [sources]
+      summary: Add a source
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSourceRequest"
+            example:
+              type: rss
+              name: Hacker News
+              url: https://news.ycombinator.com/rss
+      responses:
+        "201":
+          description: Source created (enabled by default).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+              example:
+                id: 6c84fb90-12c4-11e1-840d-7b25c5ee775a
+                type: rss
+                name: Hacker News
+                url: https://news.ycombinator.com/rss
+                enabled: true
+                created_at: "2026-07-26T13:00:00Z"
+                updated_at: "2026-07-26T13:00:00Z"
+        "400":
+          description: Missing name/url, or type is not one of rss/youtube/telegram.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "source type must be one of: rss, youtube, telegram"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      tags: [sources]
+      summary: List the current user's sources
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All sources belonging to the authenticated user.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Source"
+              example:
+                - id: 6c84fb90-12c4-11e1-840d-7b25c5ee775a
+                  type: rss
+                  name: Hacker News
+                  url: https://news.ycombinator.com/rss
+                  enabled: true
+                  created_at: "2026-07-26T13:00:00Z"
+                  updated_at: "2026-07-26T13:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/sources/{id}:
+    patch:
+      tags: [sources]
+      summary: Enable or disable a source
+      description: Disabled sources are skipped by `ingest:fetch` but not deleted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetEnabledRequest"
+            example:
+              enabled: false
+      responses:
+        "200":
+          description: Updated source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Source does not exist or does not belong to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: source not found
+    delete:
+      tags: [sources]
+      summary: Remove a source
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SourceID"
+      responses:
+        "204":
+          description: Source removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Source does not exist or does not belong to the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: source not found
+
+  /api/v1/notifications/devices:
+    post:
+      tags: [notifications]
+      summary: Register (or refresh) a push device token
+      description: Upsert by token — re-registering the same token (e.g. after reinstalling the app, or on a different account) moves it to the calling user rather than creating a duplicate.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterDeviceRequest"
+            example:
+              platform: android
+              token: fcm-registration-token-abc123
+      responses:
+        "200":
+          description: Device token registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceToken"
+              example:
+                id: 6c84fb90-12c4-11e1-840d-7b25c5ee775a
+                platform: android
+                token: fcm-registration-token-abc123
+                created_at: "2026-07-26T13:00:00Z"
+                updated_at: "2026-07-26T13:00:00Z"
+        "400":
+          description: Missing token, or platform is not one of ios/android/web.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "platform must be one of: ios, android, web"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [notifications]
+      summary: Remove a push device token
+      description: Only removes the token if it belongs to the calling user — returns 404 for a token owned by someone else (or that doesn't exist).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoveDeviceRequest"
+            example:
+              token: fcm-registration-token-abc123
+      responses:
+        "204":
+          description: Device token removed.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Token not found, or not owned by the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: device token is invalid or unregistered
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing, malformed, or expired bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: missing bearer token
+
+  parameters:
+    SourceID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Source ID, as returned by `POST /api/v1/sources` or `GET /api/v1/sources`.
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    ReadinessResult:
+      type: object
+      description: Map of dependency name to "ok" or its error message.
+      additionalProperties:
+        type: string
+
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+      required: [email, password]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required: [email, password]
+
+    RefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+      required: [refresh_token]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        created_at:
+          type: string
+          format: date-time
+      required: [id, email, created_at]
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: Short-lived JWT (`ACCESS_TOKEN_TTL`, default 15m).
+        access_token_expires_at:
+          type: string
+          format: date-time
+        refresh_token:
+          type: string
+          description: Opaque token, stored hashed server-side. Rotates on every `/refresh` call.
+        user:
+          $ref: "#/components/schemas/User"
+      required: [access_token, access_token_expires_at, refresh_token, user]
+
+    Profile:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        country:
+          type: string
+        language:
+          type: string
+        profession:
+          type: string
+        interests:
+          type: array
+          items:
+            type: string
+        topics:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [user_id, created_at, updated_at]
+
+    ProfileUpdate:
+      type: object
+      description: Full replacement of the editable profile fields (max 200 chars for name).
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        country:
+          type: string
+        language:
+          type: string
+        profession:
+          type: string
+        interests:
+          type: array
+          items:
+            type: string
+        topics:
+          type: array
+          items:
+            type: string
+
+    UserContext:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+          maxLength: 4000
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [user_id, content, created_at, updated_at]
+
+    UserContextUpdate:
+      type: object
+      properties:
+        content:
+          type: string
+          maxLength: 4000
+      required: [content]
+
+    CreateSourceRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [rss, youtube, telegram]
+        name:
+          type: string
+        url:
+          type: string
+          description: |
+            For `youtube`, must be the channel's public Atom feed
+            (`https://www.youtube.com/feeds/videos.xml?channel_id=<CHANNEL_ID>`).
+            For `telegram`, a public channel link (`https://t.me/<channel>`).
+      required: [type, name, url]
+
+    SetEnabledRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+      required: [enabled]
+
+    Source:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [rss, youtube, telegram]
+        name:
+          type: string
+        url:
+          type: string
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, type, name, url, enabled, created_at, updated_at]
+
+    RegisterDeviceRequest:
+      type: object
+      properties:
+        platform:
+          type: string
+          enum: [ios, android, web]
+        token:
+          type: string
+          description: Vendor push-registration token (FCM registration token for android/web, or an APNs/FCM token for ios).
+      required: [platform, token]
+
+    RemoveDeviceRequest:
+      type: object
+      properties:
+        token:
+          type: string
+      required: [token]
+
+    DeviceToken:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        platform:
+          type: string
+          enum: [ios, android, web]
+        token:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, platform, token, created_at, updated_at]

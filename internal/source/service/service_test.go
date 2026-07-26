@@ -124,6 +124,12 @@ func TestAddSourceValidation(t *testing.T) {
 	_, err = svc.AddSource(ctx, "user-1", domain.TypeRSS, "Feed", "  ")
 	require.ErrorIs(t, err, domain.ErrURLRequired)
 
+	_, err = svc.AddSource(ctx, "user-1", domain.TypeRSS, "Feed", "file:///etc/passwd")
+	require.ErrorIs(t, err, domain.ErrUnsupportedURLScheme)
+
+	_, err = svc.AddSource(ctx, "user-1", domain.TypeRSS, "Feed", "ftp://example.com/rss")
+	require.ErrorIs(t, err, domain.ErrUnsupportedURLScheme)
+
 	s, err := svc.AddSource(ctx, "user-1", domain.TypeRSS, "Feed", "https://example.com/rss")
 	require.NoError(t, err)
 	require.True(t, s.Enabled)

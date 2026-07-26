@@ -16,12 +16,21 @@ import (
 // RSSFetcher читает RSS/Atom-фид по прямой ссылке. Используется и для типа
 // "youtube" — публичный Atom-фид канала (youtube.com/feeds/videos.xml?channel_id=...)
 // имеет тот же формат, отдельная реализация не нужна.
+//
+// URL источника — то, что вводит пользователь (Этап 5), поэтому парсер
+// использует SSRF-safe HTTP-клиент (см. safeclient.go): без него запрос на
+// произвольный внутренний адрес (например, cloud metadata endpoint) ушёл бы
+// с сервера воркера, а ответ вернулся бы пользователю через его же брифинг.
 type RSSFetcher struct {
 	parser *gofeed.Parser
 }
 
+const fetchTimeout = 15 * time.Second
+
 func NewRSSFetcher() *RSSFetcher {
-	return &RSSFetcher{parser: gofeed.NewParser()}
+	parser := gofeed.NewParser()
+	parser.Client = newSSRFSafeHTTPClient(fetchTimeout)
+	return &RSSFetcher{parser: parser}
 }
 
 var _ domain.Fetcher = (*RSSFetcher)(nil)

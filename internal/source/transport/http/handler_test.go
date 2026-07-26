@@ -203,6 +203,19 @@ func TestCreateSourceRejectsInvalidType(t *testing.T) {
 	require.Equal(t, domain.ErrInvalidType.Error(), body["error"])
 }
 
+func TestCreateSourceRejectsUnsupportedURLScheme(t *testing.T) {
+	srv, issuer := newTestServer(t)
+	token, _, err := issuer.IssueAccessToken("user-1")
+	require.NoError(t, err)
+
+	resp := do(t, http.MethodPost, srv.URL+"/sources/", token, map[string]string{
+		"type": "rss", "name": "N", "url": "file:///etc/passwd",
+	})
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body := decode(t, resp)
+	require.Equal(t, domain.ErrUnsupportedURLScheme.Error(), body["error"])
+}
+
 func TestListSourcesOnlyReturnsCallersOwnSources(t *testing.T) {
 	srv, issuer := newTestServer(t)
 	tokenA, _, err := issuer.IssueAccessToken("user-a")

@@ -25,7 +25,7 @@ type TelegramFetcher struct {
 }
 
 func NewTelegramFetcher() *TelegramFetcher {
-	return &TelegramFetcher{client: &http.Client{Timeout: 15 * time.Second}}
+	return &TelegramFetcher{client: &http.Client{Timeout: fetchTimeout}}
 }
 
 var _ domain.Fetcher = (*TelegramFetcher)(nil)

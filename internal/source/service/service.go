@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"net/url"
 	"strings"
 
 	"github.com/Shipovmax/Lumora/internal/source/domain"
@@ -28,12 +29,31 @@ func (s *Service) AddSource(ctx context.Context, userID string, typ domain.Type,
 		return domain.Source{}, domain.ErrNameRequired
 	}
 
-	url = strings.TrimSpace(url)
-	if url == "" {
+	rawURL := strings.TrimSpace(url)
+	if rawURL == "" {
 		return domain.Source{}, domain.ErrURLRequired
 	}
+	if err := validateURLScheme(rawURL); err != nil {
+		return domain.Source{}, err
+	}
 
-	return s.repo.CreateSource(ctx, userID, typ, name, url)
+	return s.repo.CreateSource(ctx, userID, typ, name, rawURL)
+}
+
+// validateURLScheme rejects schemes other than http/https at source-creation
+// time (e.g. "file://"), so the error surfaces immediately as a 400 to the
+// user instead of an opaque failure the next time ingest:fetch runs. This is
+// a format check only — it does not (and cannot) rule out the URL resolving
+// to a private/internal address at fetch time, since DNS can change or a
+// redirect can point anywhere; that check happens where the actual outbound
+// request is made (internal/source/fetcher, via a dial-time IP allowlist),
+// not here.
+func validateURLScheme(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return domain.ErrUnsupportedURLScheme
+	}
+	return nil
 }
 
 func (s *Service) ListSources(ctx context.Context, userID string) ([]domain.Source, error) {

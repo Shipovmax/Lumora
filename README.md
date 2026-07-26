@@ -202,7 +202,7 @@ curl -X POST http://localhost:8080/api/v1/sources \
   -d '{"type":"rss","name":"Hacker News","url":"https://news.ycombinator.com/rss"}'
 ```
 
-For `type: "youtube"`, `url` must be the channel's public Atom feed, e.g. `https://www.youtube.com/feeds/videos.xml?channel_id=<CHANNEL_ID>`. For `type: "telegram"`, `url` must be a public channel link, e.g. `https://t.me/<channel>`.
+For `type: "youtube"`, `url` must be the channel's public Atom feed, e.g. `https://www.youtube.com/feeds/videos.xml?channel_id=<CHANNEL_ID>`. For `type: "telegram"`, `url` must be a public channel link, e.g. `https://t.me/<channel>`. `url` must use `http`/`https`; fetching also refuses to connect to loopback/private/link-local addresses server-side, so it can't be pointed at internal-only services.
 
 ### Importing publications (Этап 6)
 
